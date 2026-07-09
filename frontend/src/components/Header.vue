@@ -6,10 +6,13 @@
       </div>
       <div>
         <h1 class="text-xl font-bold tracking-tight text-white">ImgDiff</h1>
-        <p class="text-xs text-slate-400">Git and local folder image comparison tool</p>
+        <p class="text-xs text-slate-400">{{ isStandalone ? 'Image comparison tool' : 'Git and local folder image comparison tool' }}</p>
       </div>
     </div>
   </header>
 </template>
 <script setup lang="ts">
+import { useImgDiff } from '../composables/useImgDiff';
+
+const { isStandalone } = useImgDiff();
 </script>

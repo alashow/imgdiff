@@ -1,6 +1,5 @@
 import { ref, reactive } from 'vue';
 import { api } from '../utils/api';
-import type { LocalImageInfo } from '../utils/api';
 import type {
   AppMode,
   BackdropMode,
@@ -13,55 +12,20 @@ import type {
   OverlayBlend,
   ToggleFrame,
 } from './imgDiffTypes';
-
-function makeObjectUrl(file: File) {
-  return URL.createObjectURL(file);
-}
-
-function revokeObjectUrl(url: string) {
-  if (url?.startsWith('blob:')) URL.revokeObjectURL(url);
-}
-
-interface ManualImageSource {
-  name: string;
-  size: number;
-  url: string;
-  file?: File | null;
-}
-
-function toSourceFromFile(file: File): ManualImageSource {
-  return {
-    name: file.name,
-    size: file.size,
-    url: makeObjectUrl(file),
-    file,
-  };
-}
-
-function toSourceFromLocalImage(info: LocalImageInfo): ManualImageSource {
-  return {
-    name: info.name,
-    size: info.size,
-    url: api.getLocalImageUrl(info.path),
-  };
-}
-
-function toSourceFromManualPair(pair: ManualPair | undefined, channel: 'A' | 'B'): ManualImageSource | null {
-  if (!pair) return null;
-
-  if (channel === 'A') {
-    if (pair.fileA) return toSourceFromFile(pair.fileA);
-    if (!pair.urlA) return null;
-    return { name: pair.name, size: pair.sizeA, url: pair.urlA, file: pair.fileA };
-  }
-
-  if (pair.fileB) return toSourceFromFile(pair.fileB);
-  if (!pair.urlB) return null;
-  return { name: pair.name, size: pair.sizeB, url: pair.urlB, file: pair.fileB };
-}
+import { IS_STANDALONE } from './runtimeFlags';
+import {
+  clearSourceMap,
+  getDroppedFiles,
+  revokeManualPairUrls,
+  toSourceFromFile,
+  toSourceFromLocalImage,
+  toSourceFromManualPair,
+  traverseDirectory,
+  type ManualImageSource,
+} from './manualSources';
 
 // --- Global Reactive State ---
-const appMode = ref<AppMode>('git');
+const appMode = ref<AppMode>(IS_STANDALONE ? 'manual' : 'git');
 const repoPath = ref('');
 const modifiedImages = ref<string[]>([]);
 const gitImageStatuses = ref<Record<string, GitChangeType>>({});
@@ -207,11 +171,6 @@ function syncCurrentPairFromManual(pair?: ManualPair) {
   currentPair.heightB = pair.heightB;
 }
 
-function revokeManualPairUrls(pair: ManualPair) {
-  revokeObjectUrl(pair.urlA);
-  revokeObjectUrl(pair.urlB);
-}
-
 function resetViewportState() {
   zoom.value = 1.0;
   panX.value = 0;
@@ -227,72 +186,15 @@ function setDropOverlay(active: boolean, message = 'Drop folders or images') {
   }
 }
 
-function getDroppedFiles(event: DragEvent) {
-  const dt = event.dataTransfer;
-  if (!dt) return { folders: [] as any[], files: [] as File[] };
-
-  const items = Array.from(dt.items || []);
-  const folders: any[] = [];
-  const files: File[] = [];
-
-  items.forEach(item => {
-    const entry = (item as any).webkitGetAsEntry?.();
-    if (entry?.isDirectory) {
-      folders.push(entry);
-      return;
-    }
-
-    const file = item.kind === 'file' ? item.getAsFile() : null;
-    if (file && file.type.startsWith('image/')) files.push(file);
-  });
-
-  if (!folders.length && !files.length) {
-    Array.from(dt.files || []).forEach(file => {
-      if (file.type.startsWith('image/')) files.push(file);
-    });
-  }
-
-  return { folders, files };
-}
-
-async function traverseDirectory(dirEntry: any, map: Map<string, ManualImageSource>) {
-  const reader = dirEntry.createReader();
-  const readEntries = () => new Promise<any[]>((resolve, reject) => reader.readEntries(resolve, reject));
-
-  let entries: any[];
-  do {
-    entries = await readEntries();
-    for (const entry of entries) {
-      if (entry.isFile) {
-        await new Promise<void>(resolve => {
-          entry.file((file: File) => {
-            if (file.type.startsWith('image/')) {
-              map.set(file.name, toSourceFromFile(file));
-            }
-            resolve();
-          });
-        });
-      } else if (entry.isDirectory) {
-        await traverseDirectory(entry, map);
-      }
-    }
-  } while (entries.length > 0);
-}
-
 async function loadDroppedFolder(channel: 'A' | 'B', dirEntry: any) {
   const target = channel === 'A' ? manualFolderA.value : manualFolderB.value;
-  clearFolderMap(target);
+  clearSourceMap(target);
   await traverseDirectory(dirEntry, target);
 }
 
-function clearFolderMap(folder: Map<string, ManualImageSource>) {
-  folder.forEach((source) => revokeObjectUrl(source.url));
-  folder.clear();
-}
-
 async function setManualImagePair(sourceA: ManualImageSource | null, sourceB: ManualImageSource | null, name?: string) {
-  clearFolderMap(manualFolderA.value);
-  clearFolderMap(manualFolderB.value);
+  clearSourceMap(manualFolderA.value);
+  clearSourceMap(manualFolderB.value);
   manualPairs.value.forEach(revokeManualPairUrls);
   manualPairs.value = [];
 
@@ -392,6 +294,10 @@ export function useImgDiff() {
 
   // --- Git Mode Logic ---
   async function scanRepository(path: string) {
+    if (IS_STANDALONE) {
+      showToast('Git mode is unavailable in standalone manual build.');
+      return;
+    }
     if (!path) return;
     const normalizedPath = path.trim().replace(/\/$/, '');
     try {
@@ -468,6 +374,10 @@ export function useImgDiff() {
   }
 
   async function pickRepositoryFolder(): Promise<string | null> {
+    if (IS_STANDALONE) {
+      showToast('Git mode is unavailable in standalone manual build.');
+      return null;
+    }
     try {
       const result = await api.pickRepositoryFolder();
       const pickedPath = result?.path?.trim() || '';
@@ -482,6 +392,11 @@ export function useImgDiff() {
 
   // --- Manual Mode Logic ---
   function setGitMode() {
+    if (IS_STANDALONE) {
+      appMode.value = 'manual';
+      showToast('Git mode is unavailable in standalone manual build.');
+      return;
+    }
     appMode.value = 'git';
     stopFlickerLoop();
 
@@ -563,7 +478,7 @@ export function useImgDiff() {
 
     const target = channel === 'A' ? manualFolderA.value : manualFolderB.value;
     resetCurrentManualPair();
-    clearFolderMap(target);
+    clearSourceMap(target);
     list.forEach(source => target.set(source.name, source));
 
     rebuildManualPairsFromFolders();
@@ -581,6 +496,10 @@ export function useImgDiff() {
   }
 
   async function pickManualFolder(channel: 'A' | 'B') {
+    if (IS_STANDALONE) {
+      showToast(`Use browser folder picker for Folder ${channel}.`);
+      return;
+    }
     try {
       const picked = await api.pickManualFolder(channel);
       const folderPath = picked?.path?.trim() || '';
@@ -589,7 +508,7 @@ export function useImgDiff() {
       const images = await api.listFolderImages(folderPath);
       const normalized = images
         .filter(item => !!item.path && !!item.name)
-        .map(item => toSourceFromLocalImage(item));
+        .map(item => toSourceFromLocalImage(item, api.getLocalImageUrl));
 
       if (!normalized.length) {
         showToast('No image files found in selected folder.');
@@ -599,7 +518,7 @@ export function useImgDiff() {
       appMode.value = 'manual';
       const target = channel === 'A' ? manualFolderA.value : manualFolderB.value;
       resetCurrentManualPair();
-      clearFolderMap(target);
+      clearSourceMap(target);
       normalized.forEach(source => target.set(source.name, source));
       rebuildManualPairsFromFolders();
 
@@ -619,6 +538,10 @@ export function useImgDiff() {
   }
 
   async function pickManualImage(channel: 'A' | 'B') {
+    if (IS_STANDALONE) {
+      showToast(`Use browser file picker for Image ${channel}.`);
+      return;
+    }
     try {
       const result = await api.pickManualImage(channel);
       const pickedPath = result?.path?.trim() || '';
@@ -628,7 +551,7 @@ export function useImgDiff() {
         name: result.name,
         path: pickedPath,
         size: result.size,
-      });
+      }, api.getLocalImageUrl);
 
       appMode.value = 'manual';
       const activePair = manualPairs.value[currentManualPairIndex.value] || manualPairs.value[0];
@@ -876,6 +799,7 @@ export function useImgDiff() {
     }
 
    return {
+    isStandalone: IS_STANDALONE,
     appMode,
     repoPath,
     modifiedImages,

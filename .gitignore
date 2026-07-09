@@ -185,3 +185,5 @@ dist
 # Recommended template: Node.gitignore
 
 .kotlin
+
+frontend/dist-standalone/

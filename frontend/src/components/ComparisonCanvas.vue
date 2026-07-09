@@ -161,7 +161,7 @@
       <!-- Empty State -->
       <div v-else class="text-center flex flex-col items-center gap-2">
         <svg class="w-16 h-16 text-slate-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
-        <p class="text-slate-400">No images loaded. Scan a Git repository to compare images.</p>
+        <p class="text-slate-400">{{ isStandalone ? 'No images loaded. Pick or drop images to begin comparison.' : 'No images loaded. Scan a Git repository or switch to Manual mode.' }}</p>
       </div>
     </div>
 
@@ -183,6 +183,7 @@ import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue';
 import { useImgDiff } from '../composables/useImgDiff';
 
 const {
+  isStandalone,
   backdropMode,
   currentPair,
   compareMode,

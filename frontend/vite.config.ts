@@ -1,17 +1,33 @@
 import { defineConfig } from "vite";
 import vue from "@vitejs/plugin-vue";
 import { fileURLToPath, URL } from "node:url";
+import { viteSingleFile } from "vite-plugin-singlefile";
 
 // https://vite.dev/config/
-export default defineConfig({
-  plugins: [vue()],
-  resolve: {
-    alias: {
-      "@": fileURLToPath(new URL("./src", import.meta.url)),
+export default defineConfig(({ mode }) => {
+  const isStandalone = mode === "standalone";
+
+  return {
+    plugins: [vue(), ...(isStandalone ? [viteSingleFile()] : [])],
+    resolve: {
+      alias: {
+        "@": fileURLToPath(new URL("./src", import.meta.url)),
+      },
     },
-  },
-  // We can add a standard server config if needed, but for now, let's keep it minimal
-  server: {
-    port: 3000, // A standard port for web development
-  },
+    base: isStandalone ? "./" : "/",
+    build: isStandalone
+      ? {
+          cssCodeSplit: false,
+          assetsInlineLimit: Number.MAX_SAFE_INTEGER,
+          rollupOptions: {
+            output: {
+              inlineDynamicImports: true,
+            },
+          },
+        }
+      : undefined,
+    server: {
+      port: 3000,
+    },
+  };
 });

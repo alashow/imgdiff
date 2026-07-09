@@ -1,13 +1,13 @@
 <template>
   <aside id="sidebar-controls" class="w-full lg:w-80 bg-slate-950 border-r border-slate-800 flex flex-col overflow-y-auto no-scrollbar shrink-0 h-full">
     <!-- Git/Manual mode toggle -->
-    <div class="p-2 bg-slate-900 grid grid-cols-2 gap-1 sticky top-0 z-10 border-b border-slate-800">
+    <div v-if="!isStandalone" class="p-2 bg-slate-900 grid grid-cols-2 gap-1 sticky top-0 z-10 border-b border-slate-800">
       <button @click="setGitMode()" :class="appMode === 'git' ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-400'" class="px-3 py-2 rounded-lg text-xs font-semibold">Git Diff</button>
       <button @click="setManualMode()" :class="appMode === 'manual' ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-400'" class="px-3 py-2 rounded-lg text-xs font-semibold">Manual Compare</button>
     </div>
 
     <!-- Git Mode -->
-    <div v-if="appMode === 'git'" class="p-4 border-b border-slate-800 space-y-3">
+    <div v-if="!isStandalone && appMode === 'git'" class="p-4 border-b border-slate-800 space-y-3">
       <h3 class="text-[10px] uppercase font-bold tracking-wider text-slate-400 mb-1">Git Repository Path</h3>
       <div class="flex items-center gap-2">
         <input v-model="tempRepoPath" @keyup.enter="scanRepository(tempRepoPath)" type="text" placeholder="Path to Git repo..." class="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-300 min-w-0"/>
@@ -29,7 +29,7 @@
     </div>
 
     <!-- Manual Mode -->
-    <div v-if="appMode === 'manual'" class="p-4 border-b border-slate-800 space-y-4">
+    <div v-if="isStandalone || appMode === 'manual'" class="p-4 border-b border-slate-800 space-y-4">
       <div class="space-y-3">
         <h3 class="text-[10px] uppercase font-bold tracking-wider text-slate-400 mb-1 flex items-center justify-between">
           <span>Batch Folder Import</span>
@@ -38,14 +38,34 @@
         <p class="text-[10px] text-slate-500 leading-tight">Select two directories. Files with identical names will be paired automatically.</p>
 
         <div class="grid grid-cols-2 gap-2">
-          <button type="button" @click="pickManualFolder('A')" class="relative py-2 px-3 bg-slate-900 border border-slate-700 hover:border-indigo-500 rounded-xl transition-all text-center flex flex-col items-center gap-1 cursor-pointer">
+          <button type="button" @click="onManualFolderButton('A')" class="relative py-2 px-3 bg-slate-900 border border-slate-700 hover:border-indigo-500 rounded-xl transition-all text-center flex flex-col items-center gap-1 cursor-pointer">
             <svg class="w-4 h-4 text-indigo-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7h5l2 3h11v10H3z"/><path d="M3 7V5a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v2"/></svg>
             <span class="text-[10px] font-semibold text-slate-300">Folder A</span>
+            <input
+              v-if="isStandalone"
+              ref="folderInputA"
+              type="file"
+              webkitdirectory
+              directory
+              multiple
+              class="hidden"
+              @change="onManualFolderInputChange('A', $event)"
+            />
           </button>
 
-          <button type="button" @click="pickManualFolder('B')" class="relative py-2 px-3 bg-slate-900 border border-slate-700 hover:border-sky-500 rounded-xl transition-all text-center flex flex-col items-center gap-1 cursor-pointer">
+          <button type="button" @click="onManualFolderButton('B')" class="relative py-2 px-3 bg-slate-900 border border-slate-700 hover:border-sky-500 rounded-xl transition-all text-center flex flex-col items-center gap-1 cursor-pointer">
             <svg class="w-4 h-4 text-sky-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7h5l2 3h11v10H3z"/><path d="M3 7V5a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v2"/></svg>
             <span class="text-[10px] font-semibold text-slate-300">Folder B</span>
+            <input
+              v-if="isStandalone"
+              ref="folderInputB"
+              type="file"
+              webkitdirectory
+              directory
+              multiple
+              class="hidden"
+              @change="onManualFolderInputChange('B', $event)"
+            />
           </button>
         </div>
 
@@ -58,7 +78,7 @@
           <div
             id="dropzone-a"
             class="border-2 border-dashed border-slate-700 hover:border-indigo-500 rounded-xl p-3 transition-all text-center cursor-pointer bg-slate-900/50 relative overflow-hidden block"
-            @click="pickManualImage('A')"
+            @click="onManualImageButton('A')"
             @dragenter.prevent="handleManualDragEnter"
             @dragover.prevent="handleManualDragOver"
             @dragleave="handleManualDragLeave"
@@ -69,12 +89,20 @@
               <span class="text-xs font-semibold block text-indigo-300">Image A</span>
               <span class="text-[9px] text-slate-400 block truncate">Drag here or click</span>
             </div>
+            <input
+              v-if="isStandalone"
+              ref="imageInputA"
+              type="file"
+              accept="image/*"
+              class="hidden"
+              @change="onManualImageInputChange('A', $event)"
+            />
           </div>
 
           <div
             id="dropzone-b"
             class="border-2 border-dashed border-slate-700 hover:border-sky-500 rounded-xl p-3 transition-all text-center cursor-pointer bg-slate-900/50 relative overflow-hidden block"
-            @click="pickManualImage('B')"
+            @click="onManualImageButton('B')"
             @dragenter.prevent="handleManualDragEnter"
             @dragover.prevent="handleManualDragOver"
             @dragleave="handleManualDragLeave"
@@ -85,6 +113,14 @@
               <span class="text-xs font-semibold block text-sky-300">Image B</span>
               <span class="text-[9px] text-slate-400 block truncate">Drag here or click</span>
             </div>
+            <input
+              v-if="isStandalone"
+              ref="imageInputB"
+              type="file"
+              accept="image/*"
+              class="hidden"
+              @change="onManualImageInputChange('B', $event)"
+            />
           </div>
         </div>
       </div>
@@ -193,6 +229,7 @@ import { ref, watch, computed, onMounted } from 'vue';
 import { useImgDiff } from '../composables/useImgDiff';
 
 const {
+  isStandalone,
   appMode,
   repoPath,
   scanRepository,
@@ -208,6 +245,8 @@ const {
   setBlendFilter,
   overlayOpacityB,
   setContextOpacityVal,
+  setManualFolder,
+  addManualFiles,
   pickManualFolder,
   pickManualImage,
   handleManualDrop,
@@ -224,6 +263,10 @@ const {
 
 const tempRepoPath = ref(repoPath.value);
 const recentPaths = ref<string[]>([]);
+const folderInputA = ref<HTMLInputElement | null>(null);
+const folderInputB = ref<HTMLInputElement | null>(null);
+const imageInputA = ref<HTMLInputElement | null>(null);
+const imageInputB = ref<HTMLInputElement | null>(null);
 
 const overlayOpacity = computed({
   get: () => overlayOpacityB.value * 100,
@@ -233,6 +276,7 @@ const overlayOpacity = computed({
 watch(repoPath, (newVal) => tempRepoPath.value = newVal);
 
 onMounted(async () => {
+  if (isStandalone) return;
   recentPaths.value = loadRecentPaths();
   const lastUsedPath = recentPaths.value[0];
 
@@ -245,6 +289,45 @@ onMounted(async () => {
     tempRepoPath.value = lastUsedPath;
   }
 });
+
+function resetInput(el: HTMLInputElement | null) {
+  if (!el) return;
+  el.value = '';
+}
+
+function onManualFolderButton(channel: 'A' | 'B') {
+  if (!isStandalone) {
+    void pickManualFolder(channel);
+    return;
+  }
+  const input = channel === 'A' ? folderInputA.value : folderInputB.value;
+  input?.click();
+}
+
+function onManualImageButton(channel: 'A' | 'B') {
+  if (!isStandalone) {
+    void pickManualImage(channel);
+    return;
+  }
+  const input = channel === 'A' ? imageInputA.value : imageInputB.value;
+  input?.click();
+}
+
+function onManualFolderInputChange(channel: 'A' | 'B', event: Event) {
+  const input = event.target as HTMLInputElement;
+  if (input.files && input.files.length > 0) {
+    void setManualFolder(channel, input.files);
+  }
+  resetInput(input);
+}
+
+function onManualImageInputChange(channel: 'A' | 'B', event: Event) {
+  const input = event.target as HTMLInputElement;
+  if (input.files && input.files.length > 0) {
+    void addManualFiles(channel, input.files);
+  }
+  resetInput(input);
+}
 
 function selectRecentPath(path: string) {
   tempRepoPath.value = path;

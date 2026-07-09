@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "vue-tsc --noEmit && vite build",
-    "preview": "vite preview"
+    "build:standalone": "vue-tsc --noEmit && vite build --mode standalone --outDir dist-standalone",
+    "preview": "vite preview",
+    "preview:standalone": "vite preview --outDir dist-standalone"
   },
   "dependencies": {
     "vue": "^3.5.13"
@@ -20,6 +22,7 @@
     "tailwindcss": "^4.0.0",
     "typescript": "~5.6.2",
     "vite": "^6.0.3",
+    "vite-plugin-singlefile": "^2.2.0",
     "vue-tsc": "^2.1.10"
   }
 }
